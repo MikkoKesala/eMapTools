@@ -31,7 +31,8 @@ __copyright__ = '(C) 2024 by eMap modeling'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .ReTreeT_algorithm import eMapToolsAlgorithm
+from .processing.planretreetareas import planReTreeAreas
+from .processing.points2retreeareas import points2retreeareas
 
 
 class eMapToolsProvider(QgsProcessingProvider):
@@ -53,7 +54,8 @@ class eMapToolsProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
-        self.addAlgorithm(eMapToolsAlgorithm())
+        self.addAlgorithm(planReTreeAreas())
+        self.addAlgorithm(points2retreeareas())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 
