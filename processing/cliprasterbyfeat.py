@@ -42,7 +42,7 @@ from qgis.core import (QgsProcessing,QgsProcessingAlgorithm,
 import os,time,sys
 sys.path.append(os.path.dirname(__file__))
 #from PIL import Image
-from smk_geotools import feature2Layer,addFieldValue,clipRaster4
+from .algorithms.geotools import feature2Layer,addFieldValue,clipRaster4
 #from saastopuu import *
 
 

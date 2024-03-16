@@ -95,7 +95,8 @@ def calcFocal(in_array,distance):
     for i in ijlist:
         df = dat.shift(i[0],axis=0)
         df = df.shift(i[1],axis=1)
-        vert = pd.concat([vert,df]).max(level=0)
+        #vert = pd.concat([vert,df]).max(level=0)
+        vert = np.maximum(df,vert)
     t = []
     t.append(vert)
     t = np.array(t)

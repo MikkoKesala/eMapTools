@@ -35,7 +35,7 @@ import sys
 import inspect
 
 from qgis.core import QgsProcessingAlgorithm, QgsApplication
-from .ReTreeT_provider import eMapToolsProvider
+from .eMapTools_provider import eMapToolsProvider
 
 cmd_folder = os.path.split(inspect.getfile(inspect.currentframe()))[0]
 

@@ -1,7 +1,7 @@
 from qgis.core import QgsVectorLayer,QgsField,edit
 from qgis.PyQt.QtCore import QVariant
-from paras_2 import decay_tree_potential,NP_retention
-from geotools import hsAnalysis,go_gaussian,biodiversity
+from .paras_2 import decay_tree_potential,NP_retention
+from .geotools import hsAnalysis,go_gaussian,biodiversity
 import numpy as np
 
 def limitValue(x,minimum,maximum):

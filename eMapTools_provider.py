@@ -29,7 +29,8 @@ __copyright__ = '(C) 2024 by eMap modeling'
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
-
+import os
+from qgis.PyQt.QtGui import QIcon
 from qgis.core import QgsProcessingProvider
 from .processing.planretreetareas import planReTreeAreas
 from .processing.points2retreeareas import points2retreeareas
@@ -78,10 +79,12 @@ class eMapToolsProvider(QgsProcessingProvider):
 
     def icon(self):
         """
-        Should return a QIcon which is used for your provider inside
-        the Processing toolbox.
+        add icon
         """
-        return QgsProcessingProvider.icon(self)
+        pluginPath = os.path.dirname(__file__)
+        iconPath = os.path.join(pluginPath, 'emap.png')
+
+        return QIcon(os.path.join(iconPath))
 
     def longName(self):
         """
