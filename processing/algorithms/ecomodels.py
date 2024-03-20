@@ -1,6 +1,6 @@
 from qgis.core import QgsVectorLayer,QgsField,edit
 from qgis.PyQt.QtCore import QVariant
-from .paras_2 import decay_tree_potential,NP_retention
+from .paras_2 import decay_tree_potential,NP_retention,diameterFromHeight
 from .geotools import hsAnalysis,go_gaussian,biodiversity
 import numpy as np
 
@@ -97,7 +97,7 @@ def treespeciesFromGrid(in_feat:QgsVectorLayer):
             #feat['biod'] = float(sim_di+conver_cof)
             in_feat.updateFeature(feat)
 
-def treespeciesFromGrid2(in_feat:QgsVectorLayer,chm_height):
+def treespeciesFromGrid2(in_feat:QgsVectorLayer,chm_height,vegetationclass):
     trees = {'MEANDIAMETERDECIDUOUS':3, 'MEANDIAMETERPINE':1, 'MEANDIAMETERSPRUCE':2}
 
     u = 10
@@ -118,13 +118,14 @@ def treespeciesFromGrid2(in_feat:QgsVectorLayer,chm_height):
                 h = min(h_list)
                 i =  [t for t in trees if type(feat[t.replace('DIAMETER','HEIGHT')]) in (int,float) and round(abs(feat[chm_height]/u-feat[t.replace('DIAMETER','HEIGHT')]),2) == h] #getting dict key of the closest height value 
                 feat["treespecies"]=trees[i[0]]
-                feat["diameter"]=(feat[chm_height]/u) / feat[i[0].replace('DIAMETER','HEIGHT')]*feat[i[0]] #diameter = chm_height / meanheight<treepspecies> * meandiameter<treepspecies>
+                feat["diameter"] = diameterFromHeight(trees[i[0]],feat[chm_height]/u,feat[vegetationclass])
+                #feat["diameter"]=(feat[chm_height]/u) / feat[i[0].replace('DIAMETER','HEIGHT')]*feat[i[0]] #diameter = chm_height / meanheight<treepspecies> * meandiameter<treepspecies>
                 feat['chm_height'] = feat[chm_height]/u
             elif type(m) in (float,int):
                 #m = max([feat[t] for t in trees])
                 i  = [t for t in trees if feat[t]==m]
                 feat["treespecies"]=trees[i[0]]
-                feat["diameter"]=m
+                feat["diameter"] = diameterFromHeight(trees[i[0]],feat[chm_height]/u,feat[vegetationclass])
                 feat['chm_height'] = feat[chm_height]/u
 
             
@@ -297,7 +298,7 @@ def selectReTrees(in_feat:QgsVectorLayer,fieldname:str,cuttingfield:str,treecoun
 
 def runEssModel(in_feat:QgsVectorLayer,weights,treecount,cuttingsize,fz_field):
     normalizeValue(in_feat,"DTW_1",(0.0,1.0),True)
-    treespeciesFromGrid2(in_feat,"CHM")
+    treespeciesFromGrid2(in_feat,"CHM",fz_field)
     in_feat = biodiversity(in_feat,'fid','treespecies',20)
     #calculateBiodiversity(in_feat,["STEMCOUNTPINE","STEMCOUNTDECIDUOUS","STEMCOUNTSPRUCE"])
     decay2tree(in_feat,'diameter','fertilityclass','treespecies',fz_field)

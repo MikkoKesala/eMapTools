@@ -5,7 +5,8 @@ Created on Thu Jun  4 07:05:01 2020
 @author: alauren
 """
 #%%
-
+import numpy as np
+#%%
 def decay_tree_potential(zone):
     """
     Mikkonen, N., Leikola, N., Lahtinen, A., Lehtomäki, J., Halme, P. 2018. Monimuotoisuudelle tärkeät
@@ -278,5 +279,63 @@ def NP_retention():
     return para
 
 
+
+# %%
+
+"""
+Created 20.3.2024
+
+Author @Mikko Kesälä
+
+Diameter from height and crown width
+
+Kalliovirta & Tokola (2005) Functions for estimating Stem diameter and Tree age using tree height, crown width and existing stand database information
+
+"""
+#%%
+def diameterFromHeight(treespecies,height,vegeclass):
+    """
+    inputs: treespecies 1 = pine, 2 = spruce, 3 = deciduous, 0 = other
+            height treeheight (m)
+            vegeclass vegetation class in finland
+    outputs:
+            diameter tree diameter (cm)
+    """
+    d_cof = {'zone1':
+                {
+                0:[-2.145,1.291],
+                1:[-1.775,1.314],
+                2:[-1.740,1.228],
+                3:[-5.533,1.475]},
+            'zone2':
+                {
+                0:[-1.049,1.159],
+                1:[-0.785,1.177],
+                2:[-0.960,1.168],
+                3:[-2.938,1.226]},
+            'zone3':
+                {
+                0:[-1.187,1.212],
+                1:[-0.948,1.218],
+                2:[-0.457,1.161],
+                3:[-1.984,1.206]},
+            'zone4':
+                {
+                0:[-1.717,1.378],
+                1:[-1.854,1.389],
+                2:[-0.343,1.275],
+                3:[-1.480,1.327]}
+
+            }
+
+    height = height * 10
+    if treespecies > 3:
+        treespecies = 0
+        
+    params = d_cof['zone'+str(vegeclass)][treespecies] 
+    diameter = float(round(np.power(params[0]+params[1]*np.sqrt(height),2) / 10,2))
+
+    return diameter
+    
 
 # %%
