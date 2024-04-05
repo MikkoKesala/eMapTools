@@ -146,11 +146,11 @@
   </elevation>
   <renderer-v2 type="graduatedSymbol" attr="getisord" enableorderby="0" forceraster="0" graduatedMethod="GraduatedColor" symbollevels="0" referencescale="-1">
     <ranges>
-      <range symbol="0" lower="-1000.000000000000000" label="Alhainen" render="true" upper="-4.000000000000000"/>
+      <range symbol="0" lower="-1000.000000000000000" label="Low" render="true" upper="-4.000000000000000"/>
       <range symbol="1" lower="-4.000000000000000" label="" render="true" upper="-2.000000000000000"/>
       <range symbol="2" lower="-2.000000000000000" label="" render="true" upper="2.000000000000000"/>
       <range symbol="3" lower="2.000000000000000" label="" render="true" upper="4.000000000000000"/>
-      <range symbol="4" lower="4.000000000000000" label="Korkea" render="true" upper="100.000000000000000"/>
+      <range symbol="4" lower="4.000000000000000" label="High" render="true" upper="100.000000000000000"/>
     </ranges>
     <symbols>
       <symbol type="marker" name="0" is_animated="0" force_rhr="0" frame_rate="10" alpha="1" clip_to_extent="1">

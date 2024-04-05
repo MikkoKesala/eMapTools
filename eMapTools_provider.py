@@ -22,7 +22,7 @@
  ***************************************************************************/
 """
 
-__author__ = 'eMap modeling'
+__author__ = 'Mikko Kesälä'
 __date__ = '2024-03-16'
 __copyright__ = '(C) 2024 by eMap modeling'
 
@@ -34,7 +34,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.core import QgsProcessingProvider
 from .processing.planretreetareas import planReTreeAreas
 from .processing.points2retreeareas import points2retreeareas
-from .processing.planbufferzones import planbufferzones
+
 
 class eMapToolsProvider(QgsProcessingProvider):
 
@@ -57,7 +57,6 @@ class eMapToolsProvider(QgsProcessingProvider):
         """
         self.addAlgorithm(planReTreeAreas())
         self.addAlgorithm(points2retreeareas())
-        self.addAlgorithm(planbufferzones())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 
