@@ -1,28 +1,18 @@
 from osgeo import gdal,gdal_array
-import os,sys,tempfile
+import os,tempfile
 from math import sqrt
 import pandas as pd
 import numpy as np
 from qgis.PyQt.QtCore import QVariant
 from qgis import processing
+import rasterio
+from rasterio.enums import Resampling
+import tempfile
+from shapely.geometry import Point
+import geopandas as gpd
 #import processing
-from qgis.core import QgsVectorLayer,QgsField,QgsFeature,edit,QgsRectangle,QgsRasterLayer,QgsRasterPipe,QgsRasterProjector,QgsRasterFileWriter
+from qgis.core import QgsVectorLayer,QgsField,QgsFeature,edit,QgsRectangle,QgsRasterPipe,QgsRasterProjector,QgsRasterFileWriter
 from qgis.analysis import QgsInterpolator,QgsIDWInterpolator,QgsGridFileWriter
-
-"""
-#for developing
-QgsApplication.setPrefixPath(QgsApplication.prefixPath(), True)
-qgs = QgsApplication([], False)
-qgs.initQgis()
-sys.path.append(os.path.join(QgsApplication.prefixPath(),"python\plugins"))
-#import processing
-from processing.core.Processing import Processing
-Processing.initialize()
-#import processing
-#from processing.core.Processing import Processing
-#Processing.initialize()
-#import processing
-from qgis.analysis import QgsNativeAlgorithms"""
 
 
 def feature2Layer(feat,buffer):
@@ -144,7 +134,7 @@ def addFieldValue(in_feat:QgsVectorLayer,fieldname:str,fieldvalue:float):
     fix['OUTPUT'].updateFields()
     with edit(fix['OUTPUT']):
         for feat in fix['OUTPUT'].getFeatures():
-            feat['leimikko']=fieldvalue
+            feat[fieldname]=fieldvalue
 
             fix['OUTPUT'].updateFeature(feat)
     
@@ -189,12 +179,14 @@ def hsAnalysis(in_feat,fieldname):
 
     out = processing.run("native:rastersampling", {'INPUT':in_feat,'RASTERCOPY':tempd,'COLUMN_PREFIX':'HS_','OUTPUT':'TEMPORARY_OUTPUT'})
  
-    #hs = processing.run("qgis:idwinterpolation",{'INTERPOLATION_DATA':in_name+"::~::0::~::"+str(idx)+"::~::0",'DISTANCE_COEFFICIENT':2,'EXTENT':ext,'PIXEL_SIZE':1,'OUTPUT':'TEMPORARY_OUTPUT'})
     
     return out['OUTPUT']
 
 
 def copyVector(layer):
+    """
+    This copy vector points
+    """
     
     feats = [feat for feat in layer.getFeatures()]
     crs = str(layer.crs().authid())

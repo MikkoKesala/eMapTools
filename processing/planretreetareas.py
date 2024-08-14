@@ -66,13 +66,13 @@ class planReTreeAreas(QgsProcessingAlgorithm):
         """
 
         #inputs
-        self.addParameter(QgsProcessingParameterFeatureSource(self.INPUT,self.tr('Planning area'),[QgsProcessing.TypeVectorPolygon],defaultValue='planningareas'))
-        self.addParameter(QgsProcessingParameterField('id_field', 'ID field', type=QgsProcessingParameterField.Any, parentLayerParameterName=self.INPUT, allowMultiple=False, defaultValue='ObjecStand'))
-        self.addParameter(QgsProcessingParameterMapLayer('chm', 'Canopy Height Model', defaultValue='chm', types=[QgsProcessing.TypeRaster]))
-        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'Dept to Water', defaultValue='dtw04ha',types=[QgsProcessing.TypeRaster]))
-        self.addParameter(QgsProcessingParameterMapLayer('vegetationzone', 'Vegetation zones', defaultValue='vegetationzones', types=[QgsProcessing.TypeVectorPolygon]))
-        self.addParameter(QgsProcessingParameterMapLayer('waterbody', 'Waterbody', defaultValue='waterbody', types=[QgsProcessing.TypeVectorPolygon]))
-        self.addParameter(QgsProcessingParameterMapLayer('forestgrid', 'Forest grid', defaultValue='gridcell',types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.INPUT,self.tr('Planning area'),[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterField('id_field', 'ID field', type=QgsProcessingParameterField.Any, parentLayerParameterName=self.INPUT, allowMultiple=False))
+        self.addParameter(QgsProcessingParameterMapLayer('chm', 'Canopy Height Model', types=[QgsProcessing.TypeRaster]))
+        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'Dept to Water',types=[QgsProcessing.TypeRaster]))
+        self.addParameter(QgsProcessingParameterMapLayer('vegetationzone', 'Vegetation zones', types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterMapLayer('waterbody', 'Water body', types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterMapLayer('forestgrid', 'Forest grid',types=[QgsProcessing.TypeVectorPolygon]))
  
         
         #parameters
