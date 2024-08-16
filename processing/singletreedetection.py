@@ -20,6 +20,7 @@ from qgis.core import QgsProcessingUtils,QgsFeature,QgsGeometry,QgsFeatureSink,Q
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication
 import geopandas as gpd
+import os
 from .algorithms.geotools2 import gpd2qgis,singleTreeMapping
 
 
@@ -79,9 +80,15 @@ class Singletree_base(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'ReTreeT planning'
+        return 'Tree mapping'
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
+    
+
+    def shortHelpString(self):
+        helpfile = open(os.path.dirname(__file__) + '/descriptions/singletreedetection.html',encoding="utf-8")
+        help = helpfile.read()
+        return help
 
 
     def createInstance(self):

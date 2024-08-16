@@ -68,8 +68,8 @@ class planReTreeAreas(QgsProcessingAlgorithm):
         #inputs
         self.addParameter(QgsProcessingParameterFeatureSource(self.INPUT,self.tr('Planning area'),[QgsProcessing.TypeVectorPolygon]))
         self.addParameter(QgsProcessingParameterField('id_field', 'ID field', type=QgsProcessingParameterField.Any, parentLayerParameterName=self.INPUT, allowMultiple=False))
-        self.addParameter(QgsProcessingParameterMapLayer('chm', 'Canopy Height Model', types=[QgsProcessing.TypeRaster]))
-        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'Dept to Water',types=[QgsProcessing.TypeRaster]))
+        self.addParameter(QgsProcessingParameterMapLayer('chm', 'CHM', types=[QgsProcessing.TypeRaster]))
+        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'DTW',types=[QgsProcessing.TypeRaster]))
         self.addParameter(QgsProcessingParameterMapLayer('vegetationzone', 'Vegetation zones', types=[QgsProcessing.TypeVectorPolygon]))
         self.addParameter(QgsProcessingParameterMapLayer('waterbody', 'Water body', types=[QgsProcessing.TypeVectorPolygon]))
         self.addParameter(QgsProcessingParameterMapLayer('forestgrid', 'Forest grid',types=[QgsProcessing.TypeVectorPolygon]))
@@ -88,8 +88,8 @@ class planReTreeAreas(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterNumber(self.PUUM,self.tr('Retention tree count (pcs. / ha)'),type=QgsProcessingParameterNumber.Integer,minValue=5,maxValue=30,defaultValue=10))
         #outputs
-        self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT,self.tr('Ecological values of trees')))
-        self.addParameter(QgsProcessingParameterFeatureSink(self.AREAS,self.tr('Retention tree proposal')))
+        self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT,self.tr('Trees')))
+        self.addParameter(QgsProcessingParameterFeatureSink(self.AREAS,self.tr('Retention tree groups')))
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -251,7 +251,7 @@ class planReTreeAreas(QgsProcessingAlgorithm):
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return 'Plan retention tree areas'
+        return 'Plan retention tree groups'
 
     def group(self):
         """
@@ -272,6 +272,12 @@ class planReTreeAreas(QgsProcessingAlgorithm):
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
+    
+    def shortHelpString(self):
+        helpfile = open(os.path.dirname(__file__) + '/descriptions/planretreetareas.html',encoding="utf-8")
+        help = helpfile.read()
+        return help
+
 
     def createInstance(self):
         return planReTreeAreas()

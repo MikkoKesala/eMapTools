@@ -64,13 +64,13 @@ class points2retreeareas(QgsProcessingAlgorithm):
         """
 
         #inputs
-        self.addParameter(QgsProcessingParameterFeatureSource(self.INPUT,'tree map',[QgsProcessing.TypeVectorPoint],defaultValue='treemap'))
-        self.addParameter(QgsProcessingParameterField('species_field', 'tree species', type=QgsProcessingParameterField.Numeric, parentLayerParameterName=self.INPUT, allowMultiple=False, defaultValue='treespecies'))
-        self.addParameter(QgsProcessingParameterField('diameter_field', 'diameter', type=QgsProcessingParameterField.Numeric, parentLayerParameterName=self.INPUT, allowMultiple=False, defaultValue='diameter'))
-        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'DTW', defaultValue='dtw04ha',types=[QgsProcessing.TypeRaster]))
-        self.addParameter(QgsProcessingParameterMapLayer('vegetationzone', 'Vegetation zones', defaultValue='vegetationzones', types=[QgsProcessing.TypeVectorPolygon]))
-        self.addParameter(QgsProcessingParameterMapLayer('waterbody', 'Waterbody', defaultValue='waterbody', types=[QgsProcessing.TypeVectorPolygon]))
-        self.addParameter(QgsProcessingParameterMapLayer('forestgrid', 'Forestgrid', defaultValue='gridcell',types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.INPUT,'Trees',[QgsProcessing.TypeVectorPoint],defaultValue='treemap'))
+        self.addParameter(QgsProcessingParameterField('species_field', 'Tree species', type=QgsProcessingParameterField.Numeric, parentLayerParameterName=self.INPUT, allowMultiple=False, defaultValue='treespecies'))
+        self.addParameter(QgsProcessingParameterField('diameter_field', 'Diameter', type=QgsProcessingParameterField.Numeric, parentLayerParameterName=self.INPUT, allowMultiple=False, defaultValue='diameter'))
+        self.addParameter(QgsProcessingParameterMapLayer('dtw', 'DTW',types=[QgsProcessing.TypeRaster]))
+        self.addParameter(QgsProcessingParameterMapLayer('vegetationzone', 'Vegetation zones', types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterMapLayer('waterbody', 'Water body', types=[QgsProcessing.TypeVectorPolygon]))
+        self.addParameter(QgsProcessingParameterMapLayer('forestgrid', 'Forestgrid', types=[QgsProcessing.TypeVectorPolygon]))
         #self.addParameter(QgsProcessingParameterRasterDestination('LeikattuLatvus', 'leikattu latvus', createByDefault=True, defaultValue=None))
         #self.addParameter(QgsProcessingParameterFeatureSink('LeikattuHila', 'Leikattu hila', type=QgsProcessing.TypeVectorAnyGeometry, createByDefault=True, defaultValue=None))
         #self.addParameter(QgsProcessingParameterFeatureSink('outpisteet', 'outpisteet', type=QgsProcessing.TypeVectorPoint, createByDefault=True, defaultValue=None))
@@ -86,10 +86,10 @@ class points2retreeareas(QgsProcessingAlgorithm):
             p.setFlags(p.flags() | QgsProcessingParameterDefinition.FlagAdvanced) 
             self.addParameter(p)
 
-        self.addParameter(QgsProcessingParameterNumber(self.PUUM,self.tr('Retention tree count (pcs. / ha)'),type=QgsProcessingParameterNumber.Integer,minValue=5,maxValue=30,defaultValue=10))
+        self.addParameter(QgsProcessingParameterNumber(self.PUUM,self.tr('Retention tree count (trees / ha)'),type=QgsProcessingParameterNumber.Integer,minValue=5,maxValue=30,defaultValue=10))
         #outputs
-        self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT,self.tr('Ecological values of trees')))
-        self.addParameter(QgsProcessingParameterFeatureSink(self.AREAS,self.tr('Retention tree proposal')))
+        self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT,self.tr('Trees')))
+        self.addParameter(QgsProcessingParameterFeatureSink(self.AREAS,self.tr('Retention tree groups')))
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -241,6 +241,11 @@ class points2retreeareas(QgsProcessingAlgorithm):
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
-
+    
+    def shortHelpString(self):
+        helpfile = open(os.path.dirname(__file__) + '/descriptions/points2retreetareas.html',encoding="utf-8")
+        help = helpfile.read()
+        return help
+    
     def createInstance(self):
         return points2retreeareas()
