@@ -3,12 +3,12 @@ import os,tempfile
 from math import sqrt
 import pandas as pd
 import numpy as np
-import rasterio
-from rasterio.enums import Resampling
 from shapely.geometry import Point
 import geopandas as gpd
-from qgis.core import QgsVectorLayer,QgsField,QgsFields,QgsFeature,QgsGeometry
+from qgis.core import QgsVectorLayer,QgsField,QgsFields,QgsFeature,QgsGeometry,QgsProcessingFeedback,QgsMessageLog
+from qgis.core import Qgis
 from PyQt5.QtCore import QVariant
+from datetime import datetime
 
 def calcFocal(in_array,distance):
     """
@@ -34,6 +34,7 @@ def calcFocal(in_array,distance):
     t = []
     t.append(vert)
     t = np.array(t)
+    del dat,vert,df
 
     return t
 
@@ -65,7 +66,8 @@ def convolve_2d(image, kernel):
             region = padded_image[i:i + kernel_height, j:j + kernel_width]
             # Perform element-wise multiplication and sum the result
             output[i, j] = np.sum(region * kernel)
-    
+    del image,padded_image
+
     return output
 
 def gaussian_kernel(size, sigma):
@@ -79,6 +81,9 @@ def gaussian_kernel(size, sigma):
     Returns:
     - kernel: 2D numpy array, the Gaussian kernel
     """
+    feedback = QgsProcessingFeedback()
+    feedback.pushConsoleInfo("Implementing gaussian kernel filtering for CHM")
+
     kernel = np.fromfunction(
         lambda x, y: (1 / (2 * np.pi * sigma**2)) * np.exp(
             -((x - (size - 1) / 2)**2 + (y - (size - 1) / 2)**2) / (2 * sigma**2)
@@ -98,14 +103,13 @@ def treeTops(chm,minheight=2):
     Returns:
     - peaks: peaks as vector points of geopandas dataframe 
     """
-    
-    print ("detecting individual trees from CHM and false-color ortophoto")
 
+    chm = gdal.Open(chm)
     
-    with rasterio.open(chm) as src:
-        chmA = src.read(1)
-        #cs = src.cellsize
-        transform = src.transform
+    chmB = chm.GetRasterBand(1)
+    chmA = chmB.ReadAsArray()
+    
+    transform = chm.GetGeoTransform()
     
     # smoothing chm
     kernel = gaussian_kernel(size=3,sigma=1)
@@ -118,15 +122,103 @@ def treeTops(chm,minheight=2):
 
     peaks = np.argwhere(peakarray>0)
     peakarray = peakarray[0]
+    #print (peaks)
     
     #convert peakarray to vector points
-    peak_xy = np.array([(peakarray[y][x],transform.c +transform.a * x+0.5,transform.f +transform.e * y-0.5) for v,y,x in peaks])
+    peak_xy = np.array([(peakarray[y][x],transform[0] +transform[1] * x+0.5,transform[3] +transform[5] * y-0.5) for v,y,x in peaks])
     peaks_gdf = gpd.GeoDataFrame({'geometry': [Point(x,y) for v,x,y in peak_xy], 'height': [round(v,2) for v,x,y in peak_xy]})
     
     # Set the CRS to match the raster's CRS
-    peaks_gdf.set_crs(src.crs.to_string(), inplace=True)
-    
+    crs = chm.GetProjection()
+
+    peaks_gdf.set_crs(crs, inplace=True)
+    chm = None
+    chmB = None
+    chmA = None
+
     return peaks_gdf
+
+def optimized_treesegmentation(chm,minheight,treesegments):
+    """
+    This produce treesegments using simple watershed algorithm
+    Tree segmentation is based on Kaartinen et al. (2012) study
+    Parameters:
+    -chm: canopy height model in 2d numpy array format
+    -peakarray: tree tops in 2d numpy array format. Tree tops need to have unique values and other are 0. Array need to be same size with chm.
+
+    Outputs
+    -labels: treesegments as labeled with peakarray values
+    """
+
+    # Define treesegments as output
+    if treesegments is None:
+        treesegments = tempfile.NamedTemporaryFile(prefix='resample_',suffix='.tif')
+        treesegments = str(treesegments.name)
+    
+    chm = gdal.Open(chm)
+    chmB = chm.GetRasterBand(1)
+    chmA = chmB.ReadAsArray()
+    transform = chm.GetGeoTransform()
+
+    kernel = gaussian_kernel(size=3,sigma=1)
+    chmS = convolve_2d(chmA,kernel=kernel)
+    #print (transform.a,transform.c,transform.e,transform.f)
+    fmax = calcFocal(chmS,2)
+    peakarray = fmax - chmS
+    peakarray = np.where((peakarray==0) & (chmA>minheight),chmA,0)
+    peakarray = peakarray[0]
+
+   
+    # Find labels
+    indices = np.argwhere(peakarray>0)
+    #print (indices)
+    
+    # For centering point to middle of pixel
+    cpx = transform[1] / 2
+    cpy = transform[5] / 2
+   
+    # Replace each peak with a unique values
+    peaks_xy = []
+    for i, (row,col) in enumerate(indices):
+        peak = (i+1,peakarray[row][col],transform[0] +transform[1] * col+cpx,transform[3] +transform[5] * row+cpy)
+        peaks_xy.append(peak)
+        peakarray[row,col] = i+1
+
+    #convert peakarray to vector points
+    peaks_gdf = gpd.GeoDataFrame({'zone': [i for i,v,x,y in peaks_xy],
+                                'height': [round(v,2) for i,v,x,y in peaks_xy],
+                                'geometry': [Point(x,y) for i,v,x,y in peaks_xy]})
+    
+    # Set the CRS to match the raster's CRS
+    crs = chm.GetProjection()
+
+    peaks_gdf.set_crs(crs, inplace=True)
+    # Directions for rolling (up, down, left, right)
+    shifts = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    image = -chmS
+    #heights  = image
+    labels = peakarray
+    #directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    #labels = np.argwhere(labels>0)
+    #front = [(i,j) for i,j in front]
+    changed = True
+    while changed:
+        changed = False
+        for shift in shifts:
+            rolled_labels = np.roll(labels, shift, axis=(0, 1))
+            rolled_image = np.roll(image,shift,axis=(0,1))
+            mask = (rolled_labels > 0) & (labels == 0) & (abs(image)>minheight)
+            labels[mask] = rolled_labels[mask]
+            changed |= mask.any()  # Check if any changes were made
+
+    gdal_array.SaveArray(labels.astype("int32"),treesegments,"GTiff",chm)
+
+    chm = None
+    chmB = None
+    chmA = None
+
+    return treesegments,peaks_gdf
+
 
 def simple_treesegmentation(chm,minheight,treesegments):
     """
@@ -139,31 +231,50 @@ def simple_treesegmentation(chm,minheight,treesegments):
     Outputs
     -labels: treesegments as labeled with peakarray values
     """
+
+    # Define treesegments as output
     if treesegments is None:
         treesegments = tempfile.NamedTemporaryFile(prefix='resample_',suffix='.tif')
         treesegments = str(treesegments.name)
     
-    with rasterio.open(chm) as src:
-        chmA = src.read(1)
-        #cs = src.cellsize
-        transform = src.transform
-        crs = src.crs
-    
-    #chmS = chmA
+    chm = gdal.Open(chm)
+    chmB = chm.GetRasterBand(1)
+    chmA = chmB.ReadAsArray()
+    transform = chm.GetGeoTransform()
+
     kernel = gaussian_kernel(size=3,sigma=1)
     chmS = convolve_2d(chmA,kernel=kernel)
     #print (transform.a,transform.c,transform.e,transform.f)
     fmax = calcFocal(chmS,2)
     peakarray = fmax - chmS
-    peakarray = np.where((peakarray==0) & (chmA>minheight),1,0)
+    peakarray = np.where((peakarray==0) & (chmA>minheight),chmA,0)
     peakarray = peakarray[0]
+
+   
     # Find labels
-    indices = np.argwhere(peakarray==1)
+    indices = np.argwhere(peakarray>0)
     #print (indices)
+    
+    # For centering point to middle of pixel
+    cpx = transform[1] / 2
+    cpy = transform[5] / 2
    
     # Replace each peak with a unique values
+    peaks_xy = []
     for i, (row,col) in enumerate(indices):
+        peak = (i+1,peakarray[row][col],transform[0] +transform[1] * col+cpx,transform[3] +transform[5] * row+cpy)
+        peaks_xy.append(peak)
         peakarray[row,col] = i+1
+
+    #convert peakarray to vector points
+    peaks_gdf = gpd.GeoDataFrame({'zone': [i for i,v,x,y in peaks_xy],
+                                'height': [round(v,2) for i,v,x,y in peaks_xy],
+                                'geometry': [Point(x,y) for i,v,x,y in peaks_xy]})
+    
+    # Set the CRS to match the raster's CRS
+    crs = chm.GetProjection()
+
+    peaks_gdf.set_crs(crs, inplace=True)
 
     image = -chmS
     labels = peakarray
@@ -181,24 +292,19 @@ def simple_treesegmentation(chm,minheight,treesegments):
                         labels[ni, nj] = labels[i, j]
                         new_front.append((ni, nj))
         front = new_front
-    with rasterio.open(
-        treesegments,
-        'w',
-        driver='GTiff',
-        height=labels.shape[0],
-        width=labels.shape[1],
-        count=1,
-        dtype=labels.dtype,
-        crs=crs,
-        transform=transform,
-        ) as dst:
-            dst.write(labels, 1)
+    
+    gdal_array.SaveArray(labels.astype("int32"),treesegments,"GTiff",chm)
 
-    return treesegments
+    chm = None
+    chmB = None
+    chmA = None
 
-def resample_raster(input_raster, output_path, new_cell_size,method=Resampling.nearest):
+    return treesegments,peaks_gdf
+
+
+def resample_raster(input,output,pixel_size:int,method):
     """
-    This performs raster sampling by using rasterio module
+    This performs raster sampling by using gdal library
 
     Inputs:
     input_raster: input_raster as raster format
@@ -207,35 +313,31 @@ def resample_raster(input_raster, output_path, new_cell_size,method=Resampling.n
     method: remapling method. Neareast is default. You can change it to the other rasterio sampling method.
 
     """
-    with rasterio.open(input_raster) as src:
-        # Calculate the new transform and dimensions
-        transform = src.transform
-        
-        new_transform = transform * transform.scale(
-            new_cell_size,
-            new_cell_size
+
+    # Define output
+    if output is None:
+        output = tempfile.TemporaryFile(prefix='resample_',suffix='.tif')
+        output = output.name
+        #output = os.path()
+    # Open the input raster
+    dataset = gdal.Open(input)
+    
+    # Define the output resolution
+    x_res = pixel_size  # Pixel size in x direction (e.g., 10 meters)
+    y_res = pixel_size  # Pixel size in y direction (e.g., 10 meters)
+
+    # Resample the raster
+    gdal.Warp(
+        output,
+        dataset,
+        xRes=x_res,
+        yRes=y_res,
+        resampleAlg=method  # Use 'nearest', 'bilinear', 'cubic', etc.
         )
+    #Close the dataset
+    dataset=None
 
-        new_width = int((src.width * transform[0]) / new_cell_size)
-        new_height = int((src.height * abs(transform[4])) / new_cell_size)
-
-        # Resample the raster data
-        data = src.read(
-            out_shape=(src.count, new_height, new_width),
-            resampling=method
-        )
-
-        # Update metadata
-        profile = src.profile
-        profile.update({
-            'transform':new_transform,
-            'width': new_width,
-            'height': new_height
-        })
-
-        # Write the resampled raster to a new file
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            dst.write(data)
+    return output
 
 def zonal_stastics(refraster,zoneraster,refband=1):
     """
@@ -249,57 +351,62 @@ def zonal_stastics(refraster,zoneraster,refband=1):
     Outputs:
     zonalstastics: zonalstatisc as pandas dataframe format with zoneindex from the zonelayer.
     """
+    refra = gdal.Open(refraster)
+    reflayer = refra.GetRasterBand(refband).ReadAsArray()
     
-    with rasterio.open(refraster) as ref:
-        ref_a = ref.read(refband)
-        
-    with rasterio.open(zoneraster) as zone:
-        zone_a = zone.read(1)
-        
-    if ref.transform[0]!=zone.transform[0]:
-        temp = tempfile.NamedTemporaryFile(prefix='resample_',suffix='.tif')
-        temp = str(temp.name)
-        zoneresample = resample_raster(zoneraster,temp,ref.transform[0])
-        #temp.close()
-        with rasterio.open(temp) as zoner:
-            zoner_a = zoner.read(1)
+    zonera = gdal.Open(zoneraster)
+    zonelayer = zonera.GetRasterBand(1).ReadAsArray()
+    nodata_value = zonera.GetRasterBand(1).GetNoDataValue()
 
-        zonelayer = zoner_a
-    else:
-        zonelayer = zone_a
     
-    reflayer = ref_a
+    reftransform = refra.GetGeoTransform()
+    zonetransform = zonera.GetGeoTransform()
     
-    indices = []
-    meanl=[]
-    stdl=[]
-    countl=[]
-    maxlist = []
-    minlist = []
+    if reftransform[1]!=zonetransform[1]:
+        if reftransform[1]<zonetransform[1]:
+            temp = resample_raster(refraster,None,zonetransform[1],'average')
+            refra = gdal.Open(temp)
+            reflayer = refra.GetRasterBand(refband).ReadAsArray()
 
-    for i in range(1,np.max(zonelayer)+1):
-        slicevalues = np.extract(zonelayer==i,reflayer)
-        mean = np.mean(slicevalues)
-        std = np.std(slicevalues)
-        count = len(slicevalues)
-        maxvalue = np.max(slicevalues)
-        minvalue = np.min(slicevalues)
+        else:
+            temp = resample_raster(zoneraster,None,reftransform[1],'nearest')
+            zonera = gdal.Open(temp)
+            zonelayer = zonera.GetRasterBand(1).ReadAsArray()
+            
+
+
+    # List of unique zones
+    zones = np.unique(zonelayer[zonelayer != nodata_value])
+    zonera = None
+    refra = None
+    
+    # Calculate statistics for each zone
+    zonal_statistics = {}
+    for zone in zones:
+        zone_values = np.extract(zonelayer==zone,reflayer)
+        #mask = zone_a == zone  # Create a mask for the current zone
+        #zone_values = reflayer[mask]  # Extract values from the reference raster for this zone
         
-        indices.append(i)
-        meanl.append(mean)
-        stdl.append(std)
-        countl.append(count)
-        maxlist.append(maxvalue)
-        minlist.append(minvalue)
-    
-    zonalstastics = pd.DataFrame({"zoneindex":indices,
-                                "mean":meanl,
-                                "std":stdl,
-                                "count":countl,
-                                "max":maxlist,
-                                "min":minlist})
-    
-    return zonalstastics
+        # Calculate statistics
+        mean = np.mean(zone_values)
+        std = np.std(zone_values)
+        count_values = len(zone_values)
+        min_value = np.min(zone_values)
+        max_value = np.max(zone_values)
+        
+        # Store results in a dictionary
+        zonal_statistics[zone] = {
+            "zoneindex":zone,
+            "mean": mean,
+            "std":std,
+            "count": count_values,
+            "min": min_value,
+            "max": max_value
+        }
+    zonal_statistics = pd.DataFrame(zonal_statistics).T
+  
+    return zonal_statistics
+
 
 def calculateNDVI(falsecolor_orto,output_ndvi):
     """
@@ -310,39 +417,49 @@ def calculateNDVI(falsecolor_orto,output_ndvi):
     Outputs
     - NDVI: normalized  difference vegetation index (NDVI)
     """
+    # Define output_ndvi    
     if output_ndvi is None:
         output_ndvi = tempfile.NamedTemporaryFile(prefix='ndvi_',suffix='.tif')
         output_ndvi = str(output_ndvi.name)
-        
-    ndvif = lambda c,r:  (c - r) / (c + r)
-
-    with rasterio.open(falsecolor_orto) as src:
-        nir = src.read(1)
-        red = src.read(2)
-        crs = src.crs
-        transform = src.transform
     
-    #if nir - red 
-    nir = nir.astype('f')
-    red = red.astype('f')
-    ndvia = ndvif(nir,red) 
+    # Step 1: Open the dataset
+    dataset = gdal.Open(falsecolor_orto)
 
-    with rasterio.open(
-        output_ndvi,
-        'w',
-        driver='GTiff',
-        height=ndvia.shape[0],
-        width=ndvia.shape[1],
-        count=1,
-        dtype=ndvia.dtype,
-        crs=crs,
-        transform=transform,
-        ) as dst:
-            dst.write(ndvia, 1)
-    
+    # Step 2: Read the NIR and Red bands
+    # Assuming that NIR is in band 4 and Red is in band 3 (this may vary)
+    nir_band = dataset.GetRasterBand(1)
+    red_band = dataset.GetRasterBand(2)
+
+    # Step 3: Convert the bands to numpy arrays
+    nir = nir_band.ReadAsArray().astype(float)
+    red = red_band.ReadAsArray().astype(float)
+
+    # Step 4: Calculate NDVI
+    ndvi = (nir - red) / (nir + red)
+
+    # Step 5: Set up the output image
+    driver = gdal.GetDriverByName('GTiff')
+    out_raster = driver.Create(output_ndvi, dataset.RasterXSize, dataset.RasterYSize, 1, gdal.GDT_Float32)
+
+    # Step 6: Set the geo-transform and projection
+    out_raster.SetGeoTransform(dataset.GetGeoTransform())
+    out_raster.SetProjection(dataset.GetProjection())
+
+    # Step 7: Write the NDVI band
+    out_band = out_raster.GetRasterBand(1)
+    out_band.WriteArray(ndvi)
+
+    # Step 8: Set NDVI band to have NoData value
+    out_band.SetNoDataValue(-9999)
+
+    # Step 9: Clean up and close datasets
+    out_band.FlushCache()
+    out_raster = None
+    dataset = None
+
     return output_ndvi
 
-def singleTreeMapping(chm,orto,minheight=2):
+def singleTreeMapping(chm,orto,minheight,feedback):
     """
     This detect individual trees by minimum curvature method
     
@@ -361,42 +478,45 @@ def singleTreeMapping(chm,orto,minheight=2):
     outputs:
     treepoints: single-tree points with statistic of NDVI and CHM
     """
-    
-    print ("detecting individual trees from CHM and false-color ortophoto")
+    if feedback is None:
+        feedback = QgsProcessingFeedback()
 
-    treepoints = treeTops(chm,minheight=minheight)
-    ts = simple_treesegmentation(chm,minheight,None)
+    now = datetime.now().strftime("%H:%M:%S")
+    feedback.pushInfo(now+"\tDetecting individual trees from CHM and segmenting tree canopies")
+    
+    ts = optimized_treesegmentation(chm,minheight,None)
+    
+    treepoints = ts[1]
+    ts = ts[0]
+
+    now = datetime.now().strftime("%H:%M:%S")
+    feedback.pushInfo(now+"\tCalculating NDVI")
     ndvi = calculateNDVI(orto,None)
 
+    now = datetime.now().strftime("%H:%M:%S")
+    feedback.pushInfo(now+"\tCalculating zonal statistics of CHM and NDVI")
     ndviz = zonal_stastics(ndvi,ts,1)
     ndviz = ndviz.rename(columns={"mean": "ndvi_mean", "std": "ndvi_std","count":"crownsize","max":"ndvi_max","min":"ndvi_min"})
     
-    chm = zonal_stastics(chm,ts,1)
-    chm = chm.rename(columns={"mean": "chm_mean", "std": "chm_std","max":"chm_max","min":"chm_min"})
-    chm = chm.drop(columns=["count"])
-    #blue = zonal_stastics(orto,ts,3)
+    chmz = zonal_stastics(chm,ts,1)
+    chmz = chmz.rename(columns={"mean": "chm_mean", "std": "chm_std","max":"chm_max","min":"chm_min"})
+    chmz = chmz.drop(columns=["count"])
 
-    # Get the coordinates of the points
-    point_coords = [(point.x, point.y) for point in treepoints.geometry]
-    sa = rasterio.open(ts)
-
-    # Sample the raster at these coordinates
-    raster_values = list(sa.sample(point_coords))
-
-    # Flatten the raster values if it's a single-band raster
-    raster_values = [value[0] for value in raster_values]
-    treepoints['zone'] = raster_values
+    now = datetime.now().strftime("%H:%M:%S")
+    feedback.pushInfo(now+"\tCleaning results and writing data to output")
 
     treepoints = treepoints.join(ndviz.set_index('zoneindex'), on='zone')
-    treepoints = treepoints.join(chm.set_index('zoneindex'), on='zone')
+    treepoints = treepoints.join(chmz.set_index('zoneindex'), on='zone')
     
     # Calculate crownsize to m2 unit
-    with rasterio.open(orto) as src:
-        transform = src.transform
-        #arr = src.read(1)
-    pixel_size = transform[0]
+    src = gdal.Open(orto)
+    src2 = gdal.Open(chm)
+    pixel_size=np.max([src.GetGeoTransform()[1],src2.GetGeoTransform()[1]])
+
     treepoints["crownsize"] = pixel_size**2 * treepoints["crownsize"]
     
+    src = None
+    src2 = None
 
     return treepoints
 
@@ -463,3 +583,64 @@ def gpd2qgis(gdf):
     layer.updateExtents()
     
     return layer
+
+def valuesByDistance(gdf,fieldname:str,radius:int):
+    """
+    This lists values and distances of nearby features that fall in given radius from the feature
+
+    Paramerets:
+        gdf : geopandas dataframe
+        fieldname: the field name of geodataframe whose values ​​to list
+        radius : search radius of features
+    Outputs:
+        gdf: geodataframe with new fields (list_<fieldname> and distances)
+    """
+    # Buffering and spatial join
+    gdf['buffer'] = gdf.geometry.buffer(radius)
+    gdf['geom2'] = gdf['geometry']
+    joined_gdf = gpd.sjoin(gdf, gpd.GeoDataFrame(gdf[['buffer',fieldname,'geom2']]).set_geometry('buffer'), how='left', op='intersects')
+    
+    # clean up columns
+    joined_gdf = joined_gdf.rename(columns={fieldname+'_left':fieldname,fieldname+'_right':'nearvalue','geom2_right':'geom2'})
+
+    # Compute distances
+    joined_gdf['distance'] = joined_gdf.geometry.distance(gpd.GeoDataFrame(joined_gdf[['geom2']]).set_geometry('geom2'))
+    joined_gdf['distance'] = joined_gdf['distance'].round(2)
+    
+    # Aggregating the attribute values
+    aggregated = joined_gdf.groupby(joined_gdf.index).agg({
+        'nearvalue': lambda x: list(x),
+        'distance': lambda x: list(x)})
+    
+    # Passing fieldvalues to original and cleaning fields
+    gdf['list_'+fieldname] = gdf.index.map(aggregated['nearvalue'])
+    gdf['distances'] = gdf.index.map(aggregated['distance'])
+    gdf = gdf.drop(['buffer','geom2'],axis=1)
+    
+    return gdf
+
+def layer2gpd(layer):
+    """
+    This convert QGIS layer to geopandas dataframe
+    Parameters
+        layer: qgis vector layer (QgsVectorLayer)
+
+    Outputs
+        gdf: geopandas dataframe
+    """
+
+    features = layer.getFeatures()
+    
+    # Extract geometries and attributes
+    crs = layer.crs().authid()
+    data = []
+    for feature in features:
+        geom = feature.geometry().asWkt()
+        attrs = feature.attributes()
+        data.append({'geometry': geom, **dict(zip(layer.fields().names(), attrs))})
+    
+    # Convert to GeoPandas GeoDataFrame
+    gdf = gpd.GeoDataFrame(data, geometry=gpd.GeoSeries.from_wkt([f['geometry'] for f in data]))
+    gdf = gdf.set_crs(crs)
+    
+    return gdf

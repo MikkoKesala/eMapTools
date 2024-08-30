@@ -35,7 +35,7 @@ from qgis.core import QgsProcessingProvider
 from .processing.planretreetareas import planReTreeAreas
 from .processing.points2retreeareas import points2retreeareas
 from .processing.singletreedetection import Singletree_base
-
+from .processing.lstastics2points import Lstatistics2points
 
 class eMapToolsProvider(QgsProcessingProvider):
 
@@ -59,6 +59,7 @@ class eMapToolsProvider(QgsProcessingProvider):
         self.addAlgorithm(planReTreeAreas())
         self.addAlgorithm(points2retreeareas())
         self.addAlgorithm(Singletree_base())
+        self.addAlgorithm(Lstatistics2points())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 

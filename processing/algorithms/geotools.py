@@ -5,8 +5,6 @@ import pandas as pd
 import numpy as np
 from qgis.PyQt.QtCore import QVariant
 from qgis import processing
-import rasterio
-from rasterio.enums import Resampling
 import tempfile
 from shapely.geometry import Point
 import geopandas as gpd

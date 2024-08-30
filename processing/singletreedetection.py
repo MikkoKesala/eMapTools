@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 
 """
-This is part of eMapTool plugin. 
+This is a tool of eMapTool plugin. 
 
-This one detects singletrees from canopy height model and enriched attribute data from false-color ortophoto
+This detects individual trees from the canopy height model (CHM)
+and enricheds the attribute data for individual tree from the CHM
+and infrared-color image (CIR). The enriched data is calculated from
+the area of tree canopy segment.
 
 """
 
@@ -44,7 +47,7 @@ class Singletree_base(QgsProcessingAlgorithm):
 
         orto = QgsProcessingUtils.mapLayerFromString(parameters['cir'],context)
         ortoname = orto.source()
-        trees = singleTreeMapping(chmname,ortoname,2)
+        trees = singleTreeMapping(chmname,ortoname,2,feedback)
 
         
         layer = gpd2qgis(trees)
@@ -63,7 +66,7 @@ class Singletree_base(QgsProcessingAlgorithm):
         return 'singletrees'
 
     def displayName(self):
-        return 'Detect single trees'
+        return 'Detect individual trees'
 
     def group(self):
         """
