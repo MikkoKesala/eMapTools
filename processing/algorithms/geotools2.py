@@ -268,7 +268,7 @@ def simple_treesegmentation(chm,minheight,treesegments):
 
     #convert peakarray to vector points
     peaks_gdf = gpd.GeoDataFrame({'zone': [i for i,v,x,y in peaks_xy],
-                                'height': [round(v,2) for i,v,x,y in peaks_xy],
+                                'height': [np.round(v,1) for i,v,x,y in peaks_xy],
                                 'geometry': [Point(x,y) for i,v,x,y in peaks_xy]})
     
     # Set the CRS to match the raster's CRS
@@ -339,7 +339,7 @@ def resample_raster(input,output,pixel_size:int,method):
 
     return output
 
-def zonal_stastics(refraster,zoneraster,refband=1):
+def zonal_stastics(refraster,zoneraster,precision=1,refband=1):
     """
     This calculates zonal statistic based on raster zones
 
@@ -374,18 +374,19 @@ def zonal_stastics(refraster,zoneraster,refband=1):
             zonelayer = zonera.GetRasterBand(1).ReadAsArray()
             
 
-
+    reflayer = np.round(reflayer,precision)
     # List of unique zones
-    zones = np.unique(zonelayer[zonelayer != nodata_value])
+    zones = np.unique(zonelayer[(zonelayer != nodata_value) & (zonelayer>0)])
+    #zones = np.unique(zonelayer[zonelayer != nodata_value])
     zonera = None
     refra = None
     
     # Calculate statistics for each zone
     zonal_statistics = {}
     for zone in zones:
-        zone_values = np.extract(zonelayer==zone,reflayer)
+        #zone_values = np.extract(zonelayer==zone,reflayer)
         #mask = zone_a == zone  # Create a mask for the current zone
-        #zone_values = reflayer[mask]  # Extract values from the reference raster for this zone
+        zone_values = reflayer[zonelayer==zone]  # Extract values from the reference raster for this zone
         
         # Calculate statistics
         mean = np.mean(zone_values)
@@ -436,6 +437,7 @@ def calculateNDVI(falsecolor_orto,output_ndvi):
 
     # Step 4: Calculate NDVI
     ndvi = (nir - red) / (nir + red)
+    ndvi = np.round(ndvi,3)
 
     # Step 5: Set up the output image
     driver = gdal.GetDriverByName('GTiff')
@@ -487,20 +489,26 @@ def singleTreeMapping(chm,orto,minheight,feedback):
     ts = optimized_treesegmentation(chm,minheight,None)
     
     treepoints = ts[1]
+    treepoints["height"] = np.int16(treepoints['height']*10) / 10
     ts = ts[0]
-
+    
+    
     now = datetime.now().strftime("%H:%M:%S")
     feedback.pushInfo(now+"\tCalculating NDVI")
     ndvi = calculateNDVI(orto,None)
+    #ndvi = np.round(ndvi,3)
 
     now = datetime.now().strftime("%H:%M:%S")
-    feedback.pushInfo(now+"\tCalculating zonal statistics of CHM and NDVI")
-    ndviz = zonal_stastics(ndvi,ts,1)
-    ndviz = ndviz.rename(columns={"mean": "ndvi_mean", "std": "ndvi_std","count":"crownsize","max":"ndvi_max","min":"ndvi_min"})
-    
-    chmz = zonal_stastics(chm,ts,1)
+    feedback.pushInfo(now+"\tCalculating zonal statistics of CHM")
+    chmz = zonal_stastics(chm,ts,1,1)
     chmz = chmz.rename(columns={"mean": "chm_mean", "std": "chm_std","max":"chm_max","min":"chm_min"})
     chmz = chmz.drop(columns=["count"])
+
+    now = datetime.now().strftime("%H:%M:%S")
+    feedback.pushInfo(now+"\tCalculating zonal statistics of NDVI")
+    ndviz = zonal_stastics(ndvi,ts,3,1)
+    ndviz = ndviz.rename(columns={"mean": "ndvi_mean", "std": "ndvi_std","count":"crownsize","max":"ndvi_max","min":"ndvi_min"})
+    
 
     now = datetime.now().strftime("%H:%M:%S")
     feedback.pushInfo(now+"\tCleaning results and writing data to output")

@@ -6,7 +6,7 @@
 name=eMapTools
 qgisMinimumVersion=3.26
 description=This plugin propose retention trees and riparian buffer zones based on ecological values
-version=1.0.1
+version=1.0.3
 author=Mikko Kesälä
 email=kesalamj@gmail.com
 

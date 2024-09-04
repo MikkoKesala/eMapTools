@@ -12,16 +12,18 @@ import geopandas as gpd
 from scipy.ndimage import gaussian_filter
 import pandas as pd
 from qgis.core import QgsVectorLayer,QgsField,QgsFields,QgsFeature,QgsGeometry
-from geotools2 import gaussian_kernel,convolve_2d,calcFocal,gpd2qgis,valuesByDistance,singleTreeMapping,resample_raster
+from geotools2 import gpd2qgis,valuesByDistance,singleTreeMapping,resample_raster,optimized_treesegmentation
 from geostats import getLstats
 import matplotlib.pyplot as plt
 import rasterio
 import tempfile
+from decimal import Decimal
 from rasterio.plot import show
 from rasterio.enums import Resampling
 from shapely.geometry import Point
 from concurrent.futures import ProcessPoolExecutor
 from PyQt5.QtCore import QVariant
+
 # %%
 
 from qgis.core import (
@@ -186,98 +188,90 @@ plt.show()
 
 
 # %%
-def statisticInValue(slicevalues):
-    #slicevalues = np.extract(zone==value,ref)
-    mean = np.mean(slicevalues)
-    std = np.std(slicevalues)
-    count = len(slicevalues)
-    maxvalue = np.max(slicevalues)
-    minvalue = np.min(slicevalues)
-        
-    return mean,std,count,maxvalue,minvalue
+def statisticInValue(zone,zone_values):
+    mean = np.mean(zone_values)
+    std = np.std(zone_values)
+    count_values = len(zone_values)
+    min_value = np.min(zone_values)
+    max_value = np.max(zone_values) 
+    
+    return mean,std,count_values,min_value,max_value
     
 # %%
 
-def simple_treesegmentation2(chm,minheight,treesegments):
+def zonal_stastics2(refraster,zoneraster,refband=1):
     """
-    This produce treesegments using simple watershed algorithm
-    Tree segmentation is based on Kaartinen et al. (2012) study
-    Parameters:
-    -chm: canopy height model in 2d numpy array format
-    -peakarray: tree tops in 2d numpy array format. Tree tops need to have unique values and other are 0. Array need to be same size with chm.
+    This calculates zonal statistic based on raster zones
 
-    Outputs
-    -labels: treesegments as labeled with peakarray values
+    Inputs:
+    refraster: reference raster which statistic are calculating within zones
+    zoneraster: zone areas as raster format. If the cellsize is not same with reference layer, this performs rastersampling
+    refband: band number of the refenrece layer. First band is number 1.
+
+    Outputs:
+    zonalstastics: zonalstatisc as pandas dataframe format with zoneindex from the zonelayer.
     """
-
-    # Define treesegments as output
-    if treesegments is None:
-        treesegments = tempfile.NamedTemporaryFile(prefix='resample_',suffix='.tif')
-        treesegments = str(treesegments.name)
+    refra = gdal.Open(refraster)
+    reflayer = refra.GetRasterBand(refband).ReadAsArray()
     
-    chm = gdal.Open(chm)
-    chmB = chm.GetRasterBand(1)
-    chmA = chmB.ReadAsArray()
-    transform = chm.GetGeoTransform()
+    zonera = gdal.Open(zoneraster)
+    zonelayer = zonera.GetRasterBand(1).ReadAsArray()
+    nodata_value = zonera.GetRasterBand(1).GetNoDataValue()
 
-    kernel = gaussian_kernel(size=3,sigma=1)
-    chmS = convolve_2d(chmA,kernel=kernel)
-    #print (transform.a,transform.c,transform.e,transform.f)
-    fmax = calcFocal(chmS,2)
-    peakarray = fmax - chmS
-    peakarray = np.where((peakarray==0) & (chmA>minheight),chmA,0)
-    peakarray = peakarray[0]
-
-   
-    # Find labels
-    indices = np.argwhere(peakarray>0)
-    #print (indices)
     
-    # For centering point to middle of pixel
-    cpx = transform[1] / 2
-    cpy = transform[5] / 2
-   
-    # Replace each peak with a unique values
-    peaks_xy = []
-    for i, (row,col) in enumerate(indices):
-        peak = (i+1,peakarray[row][col],transform[0] +transform[1] * col+cpx,transform[3] +transform[5] * row+cpy)
-        peaks_xy.append(peak)
-        peakarray[row,col] = i+1
-
-    #convert peakarray to vector points
-    peaks_gdf = gpd.GeoDataFrame({'zone': [i for i,v,x,y in peaks_xy],
-                                'height': [round(v,2) for i,v,x,y in peaks_xy],
-                                'geometry': [Point(x,y) for i,v,x,y in peaks_xy]})
+    reftransform = refra.GetGeoTransform()
+    zonetransform = zonera.GetGeoTransform()
     
-    # Set the CRS to match the raster's CRS
-    crs = chm.GetProjection()
+    if reftransform[1]!=zonetransform[1]:
+        if reftransform[1]<zonetransform[1]:
+            temp = resample_raster(refraster,None,zonetransform[1],'average')
+            refra = gdal.Open(temp)
+            reflayer = refra.GetRasterBand(refband).ReadAsArray()
 
-    peaks_gdf.set_crs(crs, inplace=True)
-    # Directions for rolling (up, down, left, right)
-    shifts = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    image = -chmS
-    #heights  = image
-    labels = peakarray
-    #directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    #labels = np.argwhere(labels>0)
-    #front = [(i,j) for i,j in front]
-    changed = True
-    while changed:
-        changed = False
-        for shift in shifts:
-            rolled_labels = np.roll(labels, shift, axis=(0, 1))
-            rolled_image = np.roll(image,shift,axis=(0,1))
-            mask = (rolled_labels > 0) & (labels == 0) & (abs(image)>minheight)
-            labels[mask] = rolled_labels[mask]
-            changed |= mask.any()  # Check if any changes were made
+        else:
+            temp = resample_raster(zoneraster,None,reftransform[1],'nearest')
+            zonera = gdal.Open(temp)
+            zonelayer = zonera.GetRasterBand(1).ReadAsArray()
+            
 
-    gdal_array.SaveArray(labels.astype("int32"),treesegments,"GTiff",chm)
 
-    chm = None
-    chmB = None
-    chmA = None
-
-    return treesegments,peaks_gdf
+    # List of unique zones
+    zones = np.unique(zonelayer[(zonelayer != nodata_value) & (zonelayer>0)])
+    zonera = None
+    refra = None
+    
+    decimal_places = np.max([abs(Decimal(str(reflayer[i][i])).as_tuple().exponent) for i in range(100)])
+    if decimal_places >3:
+        decimal_places==3
+    #cf = np.power(10,decimal_places)
+    #reflayer = np.int32(reflayer*cf)
+    # Calculate statistics for each zone
+    zonal_statistics = {}
+    for zone in zones:
+        #zone_values = np.extract(zonelayer==zone,reflayer)
+        #mask = zone_a == zone  # Create a mask for the current zone
+        zone_values = reflayer[zonelayer==zone]  # Extract values from the reference raster for this zone
+        #reflayer = np.where(zonelayer!=zone,reflayer,np.NaN)
+        #statvalues = np.fromfunction(statisticInValue,zone_values)
+        # Calculate statistics
+        mean = np.mean(zone_values)
+        std = np.std(zone_values)
+        count_values = len(zone_values)
+        min_value = np.min(zone_values)
+        max_value = np.max(zone_values) 
+        
+        # Store results in a dictionary
+        zonal_statistics[zone] = {
+            "zoneindex":zone,
+            "mean":mean,
+            "std":std,
+            "count": count_values,
+            "min": min_value,
+            "max": max_value
+        }
+    zonal_statistics = pd.DataFrame(zonal_statistics).T
+  
+    return zonal_statistics
 
 
 
@@ -285,21 +279,25 @@ def simple_treesegmentation2(chm,minheight,treesegments):
 testCHM = "testfiles/testCHM.tif"
 testRe = "testfiles/testResamp.tif"
 testResample = "testfiles/watershed_resample.tif"
-treeSegments = "testfiles/watershed_result5.tif"
+treeSegments = "testfiles/treesegments_big.tif"
 testOrto = "testfiles/testOrto.tif"
 testNDVI = "testfiles/testNDVI23.tif"
 testpack = "testfiles/testPack.gpkg"
 
+orto = 'Z:/aineistoja/TreeMapping/L3334HCIR_1m.tif'
+chm = 'Z:/aineistoja/TreeMapping/L3334HCHM.tif'
+
 #test = resample_raster(testCHM,None,2,'nearest')
 #test = gdal.Open(test)
 #print (test)
-#test = simple_treesegmentation2(testCHM,2,treeSegments)
-
+test = optimized_treesegmentation(chm,2,treeSegments)
+trees = test[1]
 #test = zonal_stastics2(testCHM,treeSegments,1)
 #print (test)
-trees = singleTreeMapping(testCHM,testOrto,2,None)
-#trees.to_file(testpack,layer='trese24',driver="GPKG")
-print (trees)
+#trees = singleTreeMapping(testCHM,testOrto,2,None)
+#trees['height'] = np.int16(trees['height']*10) / 10
+trees.to_file(testpack,layer='trees_big2',driver="GPKG")
+#print (trees)
 #
 # test = calculateNDVI2(testOrto,testNDVI)
 
@@ -353,9 +351,18 @@ print(np.mean(test2))
 # %%
 test = "C:\Users\mjkesala\AppData\Local\Temp\resample_hwocq8oc.tif"
 
-# %%
-temp = tempfile.NamedTemporaryFile(prefix='pre_', suffix='.tif')
 
-gdal.Open(str(temp.name))
-#print(temp.name)
+# %%
+data_folder = r'C:/Users/mjkesala/OneDrive - University of Helsinki/QGIS/ReTreeT/Aineistot/Results2.gpkg'
+scenarios = ['waterprotection','biodiversity','climate','equal','dwp','ds','dtw','pret','realized']
+
+#points
+all = gpd.read_file(data_folder,layer = 'all2', fid_as_index=True)
+
+
+# %%
+allNb = valuesByDistance(all,"CHM",10)
+allNb
+# %%
+print (np.average([len(i) for i in allNb['list_CHM']]))
 # %%

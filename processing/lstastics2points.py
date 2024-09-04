@@ -72,7 +72,7 @@ class Lstatistics2points(QgsProcessingAlgorithm):
         return 'lstatistitics'
 
     def displayName(self):
-        return 'Calculate L-statistics for tree value'
+        return 'Calculate L-statistics'
 
     def group(self):
         """

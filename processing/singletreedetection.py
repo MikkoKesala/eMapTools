@@ -6,10 +6,8 @@ This is a tool of eMapTool plugin.
 This detects individual trees from the canopy height model (CHM)
 and enricheds the attribute data for individual tree from the CHM
 and infrared-color image (CIR). The enriched data is calculated from
-the area of tree canopy segment.
-
+the area of tree canopy segments.
 """
-
 __author__ = 'Mikko Kesälä'
 __date__ = '2024-08-14'
 __copyright__ = '(C) 2024 by eMap modeling'
