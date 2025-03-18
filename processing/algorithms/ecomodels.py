@@ -215,7 +215,7 @@ def decay2tree(in_feat:QgsVectorLayer,diameter:str,fertilityclass:str,treespecie
                 dcp = decay_tree_potential('zone3')
             #dcp = decay_tree_potential('zone'+str(feat[biogeoclass]))
 
-            if type(feat[fertilityclass]) in (int,float) and feat[diameter] > 0 and type(feat[treespecies]) in (int,float):
+            if type(feat[fertilityclass]) in (int,float) and feat[diameter] in (int,float) and type(feat[treespecies]) in (int,float):
                 if feat[fertilityclass]>6:
                     para = dcp[6][feat[treespecies]]
                 else:

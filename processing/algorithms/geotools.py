@@ -48,7 +48,7 @@ def focalMaximaCHM(input_raster,distance,convert):
     This calculates focal maximum value by specific search distance
     """
     
-    rastOut = input_raster[0:-4]+"hh.tif"
+    rastOut = tempfile.NamedTemporaryFile(prefix='fmax_',suffix='.tif').name
     chm = gdal.Open(input_raster)
     
     chmB = chm.GetRasterBand(1)

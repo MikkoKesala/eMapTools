@@ -36,6 +36,12 @@ from .processing.planretreetareas import planReTreeAreas
 from .processing.points2retreeareas import points2retreeareas
 from .processing.singletreedetection import Singletree_base
 from .processing.lstastics2points import Lstatistics2points
+from .processing.getisord_hotspot import GetisOrdHotspot
+from .processing.biodiversityIndices import BiodiversityIndices
+from .processing.flowaccumulation_dinf import flowaccumulation_dinf
+from .processing.ls_factor import lsfactor
+from .processing.slope import slope
+from .processing.planriparianzone import riparianBufferZone
 
 class eMapToolsProvider(QgsProcessingProvider):
 
@@ -60,6 +66,12 @@ class eMapToolsProvider(QgsProcessingProvider):
         self.addAlgorithm(points2retreeareas())
         self.addAlgorithm(Singletree_base())
         self.addAlgorithm(Lstatistics2points())
+        self.addAlgorithm(GetisOrdHotspot())
+        self.addAlgorithm(BiodiversityIndices())
+        self.addAlgorithm(flowaccumulation_dinf())
+        self.addAlgorithm(lsfactor())
+        self.addAlgorithm(slope())
+        self.addAlgorithm(riparianBufferZone())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 

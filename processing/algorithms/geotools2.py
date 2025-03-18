@@ -7,8 +7,10 @@ from shapely.geometry import Point
 import geopandas as gpd
 from qgis.core import QgsVectorLayer,QgsField,QgsFields,QgsFeature,QgsGeometry,QgsProcessingFeedback,QgsMessageLog
 from qgis.core import Qgis
+from qgis.core import QgsRasterPipe,QgsRasterProjector,QgsRasterFileWriter,QgsRectangle,QgsRasterLayer,QgsCoordinateReferenceSystem
 from PyQt5.QtCore import QVariant
 from datetime import datetime
+from qgis import processing
 
 def calcFocal(in_array,distance):
     """
@@ -408,6 +410,30 @@ def zonal_stastics(refraster,zoneraster,precision=1,refband=1):
   
     return zonal_statistics
 
+def zonal_stastics_qgis(refraster,zoneraster,refband=1):
+    """
+    This calculates zonal statistic based on raster zones
+
+    Inputs:
+    refraster: reference raster which statistic are calculating within zones
+    zoneraster: zone areas as raster format. If the cellsize is not same with reference layer, this performs rastersampling
+    refband: band number of the refenrece layer. First band is number 1.
+
+    Outputs:
+    zonalstastics: zonalstatisc as pandas dataframe format with zoneindex from the zonelayer.
+    """
+
+            
+    zones = processing.run("native:rasterlayerzonalstats",
+                   {'INPUT':refraster,
+                    'BAND':refband,
+                    'ZONES':zoneraster,
+                    'ZONES_BAND':1,
+                    'REF_LAYER':0,
+                    'OUTPUT_TABLE':'TEMPORARY_OUTPUT'})['OUTPUT_TABLE']
+    zones = layer2pd(zones)
+  
+    return zones
 
 def calculateNDVI(falsecolor_orto,output_ndvi):
     """
@@ -500,28 +526,31 @@ def singleTreeMapping(chm,orto,minheight,feedback):
 
     now = datetime.now().strftime("%H:%M:%S")
     feedback.pushInfo(now+"\tCalculating zonal statistics of CHM")
-    chmz = zonal_stastics(chm,ts,1,1)
-    chmz = chmz.rename(columns={"mean": "chm_mean", "std": "chm_std","max":"chm_max","min":"chm_min"})
-    chmz = chmz.drop(columns=["count"])
+    chmz = zonal_stastics_qgis(chm,ts,1)
+    #chmz = zonal_stastics(chm,ts,1,1)
+    #chmz['zone']= np.int32(chmz['zone'])
+    #chmz = chmz.rename(columns={"mean": "chm_mean", "std": "chm_std","max":"chm_max","min":"chm_min"})
+    #chmz = chmz.drop(columns=["count"])
 
     now = datetime.now().strftime("%H:%M:%S")
     feedback.pushInfo(now+"\tCalculating zonal statistics of NDVI")
-    ndviz = zonal_stastics(ndvi,ts,3,1)
-    ndviz = ndviz.rename(columns={"mean": "ndvi_mean", "std": "ndvi_std","count":"crownsize","max":"ndvi_max","min":"ndvi_min"})
+    ndviz = zonal_stastics_qgis(ndvi,ts,1)
+    #ndviz = zonal_stastics(ndvi,ts,1,1)
+    #ndviz = ndviz.rename(columns={"mean": "ndvi_mean", "std": "ndvi_std","count":"crownsize","max":"ndvi_max","min":"ndvi_min"})
     
 
     now = datetime.now().strftime("%H:%M:%S")
     feedback.pushInfo(now+"\tCleaning results and writing data to output")
 
-    treepoints = treepoints.join(ndviz.set_index('zoneindex'), on='zone')
-    treepoints = treepoints.join(chmz.set_index('zoneindex'), on='zone')
+    treepoints = treepoints.join(ndviz.set_index('zone'), on='zone',rsuffix="ndvi")
+    treepoints = treepoints.join(chmz.set_index('zone'), on='zone',rsuffix="chm")
     
     # Calculate crownsize to m2 unit
     src = gdal.Open(orto)
     src2 = gdal.Open(chm)
     pixel_size=np.max([src.GetGeoTransform()[1],src2.GetGeoTransform()[1]])
 
-    treepoints["crownsize"] = pixel_size**2 * treepoints["crownsize"]
+    #treepoints["crownsize"] = pixel_size**2 * treepoints["crownsize"]
     
     src = None
     src2 = None
@@ -606,7 +635,7 @@ def valuesByDistance(gdf,fieldname:str,radius:int):
     # Buffering and spatial join
     gdf['buffer'] = gdf.geometry.buffer(radius)
     gdf['geom2'] = gdf['geometry']
-    joined_gdf = gpd.sjoin(gdf, gpd.GeoDataFrame(gdf[['buffer',fieldname,'geom2']]).set_geometry('buffer'), how='left', op='intersects')
+    joined_gdf = gpd.sjoin(gdf, gpd.GeoDataFrame(gdf[['buffer',fieldname,'geom2']]).set_geometry('buffer'), how='left', predicate='intersects')
     
     # clean up columns
     joined_gdf = joined_gdf.rename(columns={fieldname+'_left':fieldname,fieldname+'_right':'nearvalue','geom2_right':'geom2'})
@@ -617,11 +646,13 @@ def valuesByDistance(gdf,fieldname:str,radius:int):
     
     # Aggregating the attribute values
     aggregated = joined_gdf.groupby(joined_gdf.index).agg({
+        'index_right':lambda x:list(x),
         'nearvalue': lambda x: list(x),
         'distance': lambda x: list(x)})
     
     # Passing fieldvalues to original and cleaning fields
     gdf['list_'+fieldname] = gdf.index.map(aggregated['nearvalue'])
+    gdf['nearindices'] = gdf.index.map(aggregated['index_right'])
     gdf['distances'] = gdf.index.map(aggregated['distance'])
     gdf = gdf.drop(['buffer','geom2'],axis=1)
     
@@ -652,3 +683,179 @@ def layer2gpd(layer):
     gdf = gdf.set_crs(crs)
     
     return gdf
+
+def getisord(gpd,value,distance):
+
+    #global factors
+    new_df = gpd
+    x = np.mean(new_df[value])
+    n = len(new_df)
+    s = np.sqrt(np.sum(new_df[value]**2) / n-(x**2))
+    
+    #local factors
+    new_df = valuesByDistance(gpd,value,distance)
+    new_df['wlist'] = new_df['distances'].apply(lambda x:[1 for i in x])
+    new_df['wxlist'] = new_df.apply(lambda new_df: [a*b for a,b in zip(new_df['wlist'],new_df['list_'+value])],axis=1)   
+    new_df['wx_sum'] = new_df['wxlist'].apply(sum)
+    new_df['w_sum'] = new_df['wlist'].apply(sum)
+    new_df['w2_list'] = new_df['wlist'].apply(lambda x:[i**2 for i in x])
+    new_df['w2_sum'] = new_df['w2_list'].apply(sum)
+
+    # spatial indicator
+    new_df['slocal'] = np.sqrt(n*new_df['w2_sum']-new_df['w_sum']**2/(n-1))
+    new_df[value+'_gi*'] = (new_df['wx_sum'] - x * new_df['w_sum']) / (s * new_df['slocal'])
+    
+    #new_df['w'] = new_df['list'+value].apply(len)
+    
+    new_df = new_df.drop(['wlist','wxlist','wx_sum','w_sum','w2_sum','w2_list','slocal','distances','list_'+value],axis=1)
+    #new_df['slocal'] = np.sqrt((len(new_df)*new_df['w']-np.sum(new_df['list_'+value].apply(len))**2) / (len(new_df)-1))
+    #new_df['gi_'+value] = np.sum(new_df['list_'+value])-x * np.sum(new_df['list_'+value].apply(len)) / (s*new_df['slocal'])
+
+    return new_df
+
+
+    
+def layer2pd(layer):
+    """
+    This convert QGIS statistic layer to pandas dataframe
+    Parameters
+        layer: qgis vector stastic layer (QgsVectorLayer)
+
+    Outputs
+        df: pandas dataframe
+    """
+
+    features = layer.getFeatures()
+    
+    # Extract geometries and attributes
+    #crs = layer.crs().authid()
+    data = []
+    for feature in features:
+        #geom = feature.geometry().asWkt()
+        attrs = feature.attributes()
+        data.append({**dict(zip(layer.fields().names(), attrs))})
+    
+    # Convert to GeoPandas GeoDataFrame
+    df = pd.DataFrame(data)
+    return df
+
+def clipBigVRTrasterByFeature(raster,unifield,polygon,output,outputvrt):
+    raster = gdal.Open(raster)
+    if not os.path.exists(output):
+        os.makedirs(output)
+    
+    t = raster.GetGeoTransform()
+    x = t[1]
+    y = abs(t[5])
+    files = []
+    count = len(polygon)
+    for idx, row in polygon.iterrows():
+        feature = row['geometry']
+        field = row[unifield]
+        #feature.set_precision(1)
+        bounds = tuple(np.round(i,0) for i in feature.bounds)
+        out = output+'clipped_raster_'+str(field)+'.tif'
+        files.append(out)
+        gdal.Warp(out,raster,outputBounds=bounds,xRes=x,yRes=y)
+        print (str(idx)+"/"+str(count))
+        #clip_raster_by_feature2(chm, feature, output_path)
+    
+    gdal.BuildVRT(outputvrt,files)
+    raster = None
+
+def clipByFeature(rlayer,unifield,polygon,output,outputvrt):
+    renderer = rlayer.renderer()
+    provider = rlayer.dataProvider()
+    
+    rcrs = rlayer.crs()
+    fcrs = QgsCoordinateReferenceSystem(str(polygon.crs))
+   
+    x = rlayer.rasterUnitsPerPixelX()
+    y = rlayer.rasterUnitsPerPixelY()
+    
+
+    pipe = QgsRasterPipe()
+    projector = QgsRasterProjector()
+    projector.setCrs(rcrs, fcrs)
+
+    if not pipe.set(provider.clone()):
+        print("Cannot set pipe provider")
+
+
+    if not pipe.insert(2, projector):
+        print("Cannot set pipe projector")
+
+    files = []
+    for idx,row in polygon.iterrows():
+        
+        feature = row['geometry']
+        field = row[unifield]
+
+        out_file = output+'clipped_raster_'+str(field)+'.tif'
+        file_writer = QgsRasterFileWriter(out_file)
+        file_writer.Mode(0)
+
+        print ("Saving")
+        bounds = [int(np.round(i,0)) for i in feature.bounds]
+        #print (bounds)
+        #extent = QgsRectangle(bounds[0], bounds[1], bounds[2], bounds[3])
+        width = int((bounds[2]-bounds[0]) / x)
+        height = int((bounds[3]-bounds[1]) / y)
+        
+        if width % x != 0:
+            nwidth = width + (x-width%x)
+            bounds[0] = bounds[0]-(nwidth-width)
+            witdh = nwidth
+        if height % y !=0:
+            nheight = height + (y-height%y)
+            bounds[1] = bounds[1]-(nheight-height)
+            height = nheight
+        
+        bounds = tuple(bounds)
+        extent = QgsRectangle(bounds[0], bounds[1], bounds[2], bounds[3])
+        print (width,height,x,y)
+        opts = ["COMPRESS=LZW"]
+        file_writer.setCreateOptions(opts)
+        error = file_writer.writeRaster(
+            pipe,
+            width,
+            height,
+            extent,
+            fcrs)
+        if error == QgsRasterFileWriter.NoError:
+            print ("Raster was saved successfully!")
+            files.append(out_file)
+            #layer = QgsRasterLayer(out_file, "result")
+
+        else:
+            print ("Raster was not saved!")
+
+    gdal.BuildVRT(outputvrt,files)
+
+def pointDelineate(point_gdf,distance,aggfunc):
+       
+       area = point_gdf
+       
+       #delineating geometries
+       area['buffer'] = area.buffer(distance)
+       area = area['buffer'].union_all()
+       area = gpd.GeoDataFrame(geometry=[area])
+       area = area.explode(index_parts=False)
+       area = area.buffer(2*distance)
+       area = area.buffer((-2*distance)-(distance/2))
+       area = gpd.GeoDataFrame(geometry=area)
+       area['area'] = area.geometry.area 
+       area = area.reset_index()
+       area = area.drop(['index'],axis=1)
+       area = area.reset_index()
+       area.rename(columns={'index': 'areaid'}, inplace=True)
+
+       #aggregation and join original data
+       area = area.set_crs(point_gdf.crs)
+       pwp = gpd.sjoin(point_gdf, area, how="inner", predicate="intersects")
+       pwp = pwp.dissolve(by="areaid",aggfunc=aggfunc)
+       pwp = pwp.drop(['geometry'],axis=1)
+       
+       area = area.join(pwp,on='areaid',how='left')
+
+       return area

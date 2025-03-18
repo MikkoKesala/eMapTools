@@ -30,11 +30,12 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterDefinition,
                        QgsProcessingUtils,QgsRasterLayer,QgsVectorLayer)
-import os,time,sys
+import os,time,sys,tempfile
 
 #from PIL import Image
 from .algorithms.geotools import feature2Layer,createTreeMap,addFieldValue,joinIntersection,point2area,clipRaster3,distance2location
 from .algorithms.ecomodels import runEssModel
+from .algorithms.geotools2 import clipByFeature,clipBigVRTrasterByFeature,layer2gpd
 
 
 class planReTreeAreas(QgsProcessingAlgorithm):
@@ -140,6 +141,8 @@ class planReTreeAreas(QgsProcessingAlgorithm):
             out.setCrs(source.crs())
             out1.setCrs(source.crs())
             leim = addFieldValue(out1,"leimikko",1)
+
+            #out_gpd = layer2gpd(out)
             
             try:
                 chm = QgsProcessingUtils.mapLayerFromString(parameters['chm'],context)
@@ -152,7 +155,7 @@ class planReTreeAreas(QgsProcessingAlgorithm):
                 #biogeo = QgsProcessingUtils.mapLayerFromString(parameters['vegetaionzone'],context)
 
 
-                feedback.setProgressText("Creating tree map")
+                feedback.setProgressText("Creating tree map using file")
 
                 outChm = createTreeMap(chm,3,False)
 
